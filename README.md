@@ -103,7 +103,3 @@ YOLOv8 detection · sensor noise and occlusion · lane detection · ROS 2 nodes 
 ## 🎓 Learning Outcomes
 Graph search (A\*), perception pipelines, belief-state mapping, replanning, simulation-based testing, modular Python, unit testing, Git workflow.
 
-## 👤 Author
-**Your Name** · [LinkedIn](https://linkedin.com/in/your-profile) · [GitHub](https://github.com/your-username)
-
-Licensed under MIT.
