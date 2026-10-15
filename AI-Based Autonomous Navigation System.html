@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AI-Based Autonomous Navigation System</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef2f4;--surface:#fff;--ink:#16222b;--muted:#4f6270;--line:#cfd9df;--path:#0f7b8a;--hazard:#e8590c;--wall:#2b3a45;--free:#f6f9fa;--unseen:#dde5ea;--agent:#d6336c;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1a21;--surface:#16252e;--ink:#e6eef2;--muted:#9fb3bf;--line:#2a3d48;--path:#3cc4d6;--hazard:#ff8a3d;--wall:#6f8794;--free:#1b2d37;--unseen:#12212a;--agent:#ff5c93;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1a21;--surface:#16252e;--ink:#e6eef2;--muted:#9fb3bf;--line:#2a3d48;--path:#3cc4d6;--hazard:#ff8a3d;--wall:#6f8794;--free:#1b2d37;--unseen:#12212a;--agent:#ff5c93;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 17px/1.6 "Space Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1080px;margin:0 auto;padding:0 20px 64px}
+h1{font-size:clamp(2rem,5vw,3.4rem);line-height:1.08;margin:48px 0 12px;letter-spacing:-.02em;max-width:18ch}
+h2{font-size:1.5rem;margin:56px 0 12px;letter-spacing:-.01em}
+p{max-width:68ch;margin:0 0 14px}
+.lead{font-size:1.15rem;color:var(--muted);max-width:60ch}
+.sim{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:28px}
+.panels{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.panel{margin:0}.panel figcaption{font-size:.9rem;color:var(--muted);margin-bottom:6px}
+canvas{width:100%;aspect-ratio:40/30;display:block;border-radius:4px;border:1px solid var(--line)}
+.ctrl{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;margin-top:14px}
+.ctrl label{display:flex;flex-direction:column;font-size:.85rem;color:var(--muted);gap:2px}
+.ctrl input[type=range]{width:150px;accent-color:var(--path)}
+button{font:inherit;font-weight:500;padding:8px 16px;border-radius:6px;border:1px solid var(--path);background:var(--path);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--path)}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid var(--hazard);outline-offset:2px}
+.stats{display:flex;flex-wrap:wrap;gap:6px 26px;margin-top:14px;font-size:.95rem}
+.stats b{font-weight:700}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.85rem;color:var(--muted);margin-top:10px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+ol.loop{padding-left:22px;max-width:68ch}ol.loop li{margin-bottom:8px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;min-width:560px;width:100%;background:var(--surface);border:1px solid var(--line)}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);font-size:.95rem}th{font-weight:700}
+pre{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px;overflow-x:auto;font-size:.88rem;line-height:1.5}
+.note{border-left:4px solid var(--hazard);padding:4px 14px;color:var(--muted);max-width:68ch}
+.links a{color:var(--path);font-weight:500;margin-right:18px}
+footer{color:var(--muted);font-size:.9rem;margin-top:48px}
+@media (max-width:700px){.panels{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<main>
+<h1>A robot that plans, looks, and changes its mind</h1>
+<p class="lead">AI-Based Autonomous Navigation System: a virtual robot starts with a blank map, senses what is around it, plans with A*, and replans whenever the world surprises it. Watch it run below.</p>
+
+<section class="sim" aria-label="Live navigation simulation">
+  <div class="panels">
+    <figure class="panel"><figcaption>The real world (the robot cannot see all of it)</figcaption><canvas id="truth" aria-label="Ground truth map"></canvas></figure>
+    <figure class="panel"><figcaption>What the robot believes, and its current plan</figcaption><canvas id="belief" aria-label="Robot belief map"></canvas></figure>
+  </div>
+  <div class="ctrl">
+    <button id="play">Pause</button>
+    <button id="reset" class="ghost">New map</button>
+    <label>Moving obstacles: <span id="dynV">4</span><input id="dyn" type="range" min="0" max="10" value="4"></label>
+    <label>Camera radius: <span id="radV">5</span><input id="rad" type="range" min="2" max="8" value="5"></label>
+    <label>Speed: <span id="spdV">8</span> steps/s<input id="spd" type="range" min="1" max="30" value="8"></label>
+  </div>
+  <div class="stats" aria-live="polite">
+    <span>Status: <b id="sStatus">running</b></span><span>Step: <b id="sStep">0</b></span>
+    <span>Replans: <b id="sRep">0</b></span><span>Distance: <b id="sLen">0</b></span>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--agent)"></i>robot</span><span><i style="background:var(--path)"></i>planned path</span>
+    <span><i style="background:var(--hazard)"></i>moving obstacle</span><span><i style="background:var(--wall)"></i>wall</span>
+    <span><i style="background:var(--unseen)"></i>not yet seen</span>
+  </div>
+</section>
+
+<h2>How it works</h2>
+<p>The robot never reads the true map. It repeats this loop every step:</p>
+<ol class="loop">
+  <li><b>Sense.</b> It looks at a square window around itself and finds which cells are blocked.</li>
+  <li><b>Update.</b> It overwrites its belief map with what it just saw, so obstacles that moved away are forgotten.</li>
+  <li><b>Decide.</b> If the current path now crosses a blocked cell, it needs a new plan.</li>
+  <li><b>Plan.</b> A* finds the shortest route on the belief map. Unseen cells are assumed free.</li>
+  <li><b>Act.</b> A separate safety check refuses any step into an occupied cell, then the robot moves one cell.</li>
+</ol>
+
+<h2>Results</h2>
+<p>Measured with the Python benchmark on 30 random 40×30 maps per scenario, camera radius 5.</p>
+<div class="scroll"><table>
+<tr><th>Scenario</th><th>Success</th><th>Avg steps</th><th>Avg replans</th><th>Path efficiency</th><th>Collisions</th></tr>
+<tr><td>Static obstacles</td><td>100%</td><td>43.9</td><td>10.0</td><td>0.964</td><td>0</td></tr>
+<tr><td>Dense map</td><td>100%</td><td>49.8</td><td>13.6</td><td>0.941</td><td>0</td></tr>
+<tr><td>4 moving obstacles</td><td>100%</td><td>44.5</td><td>11.0</td><td>0.957</td><td>0</td></tr>
+<tr><td>8 moving obstacles</td><td>100%</td><td>44.4</td><td>11.8</td><td>0.956</td><td>0</td></tr>
+</table></div>
+<p style="margin-top:12px;color:var(--muted)">Path efficiency is the best possible length on the true map divided by the distance driven. It is below 1.0 because the robot learns the map as it goes. Collisions are zero by design: the safety check rejects unsafe moves and counts them as emergency stops.</p>
+
+<h2>Run it yourself</h2>
+<pre>git clone https://github.com/your-username/ai-autonomous-navigation-system.git
+cd ai-autonomous-navigation-system
+pip install -r requirements.txt
+python main.py --dynamic 4 --seed 7</pre>
+<p class="note">The simulation on this page is a JavaScript port of the planner and belief map so it runs in your browser. The Python project adds the OpenCV perception pipeline (blur, threshold, contours) and a LiDAR-style ray scan.</p>
+
+<h2>Limits</h2>
+<p>It is a 2D grid with a perfect, noise-free sensor, random-walk obstacles, and no robot dynamics. Next steps are YOLO detection, sensor noise, ROS 2, and a real Raspberry Pi robot.</p>
+
+<p class="links" style="margin-top:28px"><a href="https://github.com/your-username/ai-autonomous-navigation-system">Source on GitHub</a><a href="https://linkedin.com/in/your-profile">Author on LinkedIn</a></p>
+<footer>Built with Python, NumPy, OpenCV, Matplotlib, and A*. This page runs the demo in plain JavaScript.</footer>
+</main>
+<script>
+const W=40,H=30,$=id=>document.getElementById(id);
+const rng=s=>{let a=s>>>0;return()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}};
+const R2=Math.SQRT2,M8=[[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,R2],[1,-1,R2],[-1,1,R2],[-1,-1,R2]];
+const out=(x,y)=>x<0||y<0||x>=W||y>=H;
+function astar(g,s,t){
+  const bl=(x,y)=>out(x,y)||g[y*W+x];if(bl(...s)||bl(...t))return null;
+  const h=(x,y)=>{const dx=Math.abs(x-t[0]),dy=Math.abs(y-t[1]);return dx+dy+(R2-2)*Math.min(dx,dy)};
+  const G=new Float64Array(W*H).fill(Infinity),P=new Int32Array(W*H).fill(-1),C=new Uint8Array(W*H),q=[];
+  const push=n=>{q.push(n);let i=q.length-1;while(i>0){const p=i-1>>1;if(q[p][0]<=q[i][0])break;[q[p],q[i]]=[q[i],q[p]];i=p}};
+  const pop=()=>{const top=q[0],l=q.pop();if(q.length){q[0]=l;let i=0;for(;;){let a=2*i+1,b=a+1,m=i;if(a<q.length&&q[a][0]<q[m][0])m=a;if(b<q.length&&q[b][0]<q[m][0])m=b;if(m===i)break;[q[m],q[i]]=[q[i],q[m]];i=m}}return top};
+  const si=s[1]*W+s[0];G[si]=0;push([h(...s),si]);
+  while(q.length){
+    const [,i]=pop();if(C[i])continue;C[i]=1;const x=i%W,y=i/W|0;
+    if(x===t[0]&&y===t[1]){const p=[];for(let k=i;k!==-1;k=P[k])p.push([k%W,k/W|0]);return p.reverse()}
+    for(const [dx,dy,c] of M8){const nx=x+dx,ny=y+dy;if(bl(nx,ny))continue;
+      if(dx&&dy&&(bl(x+dx,y)||bl(x,y+dy)))continue;
+      const ni=ny*W+nx,ng=G[i]+c;if(ng<G[ni]){G[ni]=ng;P[ni]=i;push([ng+h(nx,ny),ni])}}
+  }return null;
+}
+let S;
+function makeWorld(seed,nd){
+  for(let k=0;k<200;k++){
+    const r=rng(seed+k),g=new Uint8Array(W*H);
+    for(let x=0;x<W;x++){g[x]=g[(H-1)*W+x]=1}for(let y=0;y<H;y++){g[y*W]=g[y*W+W-1]=1}
+    for(let n=0;n<Math.floor(.18*W*H/4);n++){const bw=1+r()*3|0,bh=1+r()*3|0,x=1+r()*(W-1-bw)|0,y=1+r()*(H-1-bh)|0;
+      for(let j=0;j<bh;j++)for(let i=0;i<bw;i++)g[(y+j)*W+x+i]=1}
+    const st=[1,1],go=[W-2,H-2];
+    for(const [cx,cy] of [st,go])for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++){const x=cx+i,y=cy+j;if(x>0&&y>0&&x<W-1&&y<H-1)g[y*W+x]=0}
+    if(!astar(g,st,go))continue;
+    const dyn=[];let tries=0;
+    while(dyn.length<nd&&tries++<2000){const x=1+r()*(W-2)|0,y=1+r()*(H-2)|0;
+      if(!g[y*W+x]&&Math.abs(x-1)+Math.abs(y-1)>6&&Math.abs(x-go[0])+Math.abs(y-go[1])>6&&!dyn.some(d=>d[0]===x&&d[1]===y))dyn.push([x,y])}
+    return{g,dyn,st,go,r,seed};
+  }
+}
+function reset(newSeed){
+  const seed=newSeed?Math.floor(Math.random()*1e6):(S?S.w.seed:7);
+  const w=makeWorld(seed,+$('dyn').value);
+  S={w,pos:[...w.st],belief:new Uint8Array(W*H),seen:new Uint8Array(W*H),path:null,trail:[[...w.st]],replans:0,first:false,stall:0,timer:0,status:'running',steps:0,len:0};
+  draw();
+}
+const wBlocked=(x,y)=>out(x,y)||S.w.g[y*W+x]||S.w.dyn.some(d=>d[0]===x&&d[1]===y);
+const bBlocked=(x,y)=>out(x,y)||S.belief[y*W+x];
+const cut=(a,b,f)=>{const dx=b[0]-a[0],dy=b[1]-a[1];return dx&&dy&&(f(a[0]+dx,a[1])||f(a[0],a[1]+dy))};
+function moveDyn(){
+  const {dyn,g,r}=S.w,occ=new Set(dyn.map(d=>d[1]*W+d[0])),D=[[0,0],[1,0],[-1,0],[0,1],[0,-1]];
+  for(const d of dyn){const [dx,dy]=D[r()*5|0],nx=d[0]+dx,ny=d[1]+dy,ni=ny*W+nx;
+    if(!out(nx,ny)&&!g[ni]&&!occ.has(ni)&&!(nx===S.pos[0]&&ny===S.pos[1])){occ.delete(d[1]*W+d[0]);d[0]=nx;d[1]=ny;occ.add(ni)}}
+}
+function step(){
+  if(S.status!=='running')return;
+  if(S.pos[0]===S.w.go[0]&&S.pos[1]===S.w.go[1]){S.status='goal reached';return}
+  const R=+$('rad').value;
+  for(let j=-R;j<=R;j++)for(let i=-R;i<=R;i++){const x=S.pos[0]+i,y=S.pos[1]+j;if(out(x,y))continue;S.belief[y*W+x]=wBlocked(x,y)?1:0;S.seen[y*W+x]=1}
+  const blocked=S.path&&(S.path.slice(1).some(([x,y])=>S.belief[y*W+x])||S.path.slice(0,-1).some((a,k)=>cut(a,S.path[k+1],bBlocked)));
+  if(!S.path||blocked){S.path=astar(S.belief,S.pos,S.w.go);if(S.first)S.replans++;S.first=true}
+  S.steps++;
+  if(!S.path){if(++S.stall>15){S.status='no path found';return}moveDyn();return}
+  S.stall=0;const nx=S.path[1];
+  if(wBlocked(...nx)||cut(S.pos,nx,wBlocked)){S.path=null;moveDyn();return}
+  S.len+=Math.hypot(nx[0]-S.pos[0],nx[1]-S.pos[1]);S.path=S.path.slice(1);S.pos=nx;S.trail.push(nx);moveDyn();
+  if(S.pos[0]===S.w.go[0]&&S.pos[1]===S.w.go[1])S.status='goal reached';
+}
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function setup(c){const d=devicePixelRatio||1,w=c.clientWidth;c.width=w*d;c.height=w*H/W*d;const x=c.getContext('2d');x.setTransform(d,0,0,d,0,0);return[x,w/W]}
+function draw(){
+  const col={wall:css('--wall'),free:css('--free'),un:css('--unseen'),path:css('--path'),haz:css('--hazard'),ag:css('--agent')};
+  const [a,cs]=setup($('truth')),[b,cb]=setup($('belief'));
+  const cell=(x,i,j,c,s)=>{x.fillStyle=c;x.fillRect(i*s,j*s,s+.5,s+.5)};
+  for(let j=0;j<H;j++)for(let i=0;i<W;i++){
+    cell(a,i,j,S.w.g[j*W+i]?col.wall:col.free,cs);
+    cell(b,i,j,!S.seen[j*W+i]?col.un:S.belief[j*W+i]?col.wall:col.free,cb);
+  }
+  for(const [x,y] of S.w.dyn)cell(a,x,y,col.haz,cs);
+  const line=(x,pts,s,c,w)=>{if(pts.length<2)return;x.strokeStyle=c;x.lineWidth=w;x.beginPath();pts.forEach(([i,j],k)=>k?x.lineTo((i+.5)*s,(j+.5)*s):x.moveTo((i+.5)*s,(j+.5)*s));x.stroke()};
+  line(a,S.trail,cs,col.path,2);if(S.path)line(b,S.path,cb,col.path,2.5);
+  const R=+$('rad').value;a.strokeStyle=col.path;a.lineWidth=1.5;a.strokeRect((S.pos[0]-R)*cs,(S.pos[1]-R)*cs,(2*R+1)*cs,(2*R+1)*cs);
+  for(const [x,s,c] of [[a,cs],[b,cb]]){
+    x.fillStyle='#e8c200';x.beginPath();x.arc((S.w.go[0]+.5)*s,(S.w.go[1]+.5)*s,s*.6,0,7);x.fill();
+    x.fillStyle=col.ag;x.beginPath();x.arc((S.pos[0]+.5)*s,(S.pos[1]+.5)*s,s*.5,0,7);x.fill();
+  }
+  $('sStatus').textContent=S.status;$('sStep').textContent=S.steps;$('sRep').textContent=S.replans;$('sLen').textContent=S.len.toFixed(1)+' cells';
+}
+let playing=true,last=0,acc=0;
+function loop(t){const dt=Math.min(t-last,200);last=t;
+  if(playing&&S.status==='running'){acc+=dt;const iv=1000/+$('spd').value;while(acc>=iv){step();acc-=iv}draw()}
+  else if(S.status!=='running'&&playing&&!S.timer){S.timer=1;draw();setTimeout(()=>reset(true),2500)}
+  requestAnimationFrame(loop)}
+$('play').onclick=()=>{playing=!playing;$('play').textContent=playing?'Pause':'Play'};
+$('reset').onclick=()=>reset(true);
+for(const id of ['dyn','rad','spd']){$(id).oninput=()=>{$(id+'V').textContent=$(id).value;if(id==='dyn')reset(false);else draw()}}
+addEventListener('resize',draw);
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',draw);
+reset(false);requestAnimationFrame(loop);
+</script>
+</body>
+</html>
